@@ -132,6 +132,7 @@ static void uwb_task(void *arg)
     }
 }
 
+
 /* ----------------------------------------------------- Lidar obstacle field */
 
 static float lidar_angle_to_body_rad(float raw_deg)
@@ -168,8 +169,13 @@ static void lidar_task(void *arg)
             fa_obstacle_reset(&work, LIDAR_SECTORS, LIDAR_FOV_RAD);
         }
         if (p.distance_mm > 0.0f && p.quality > 0) {
-            const float body = lidar_angle_to_body_rad(p.angle_deg);
-            fa_obstacle_add(&work, body, p.distance_mm / 1000.0f);
+            // 【修改点】：过滤无效角度，仅保留 0~65 度 和 295~360 度的点
+            if ((p.angle_deg >= 0.0f && p.angle_deg <= 65.0f) || 
+                (p.angle_deg >= 295.0f && p.angle_deg <= 360.0f)) {
+                
+                const float body = lidar_angle_to_body_rad(p.angle_deg);
+                fa_obstacle_add(&work, body, p.distance_mm / 1000.0f);
+            }
         }
     }
 }

@@ -6,6 +6,6 @@
     "--compile-commands-dir=d:\\ESP32_S3\\DIAN_TEST\\dian_git\\build"
   ],
   "idf.flashType": "UART",
-  "idf.portWin": "COM35",
+  "idf.portWin": "COM13",
   "idf.currentSetup": "D:/Espressif/frameworks/esp-idf-v5.4/"
 }
