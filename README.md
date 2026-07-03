@@ -23,7 +23,7 @@
                           ┌─────────────────────────┐
                           │      ESP32-S3            │
                           │                          │
-   UWB (BU0x) ───────────►│ UART1 (RX=18, TX=8)      │
+   UWB (BU0x) ───────────►│ UART1 (RX=18, TX=37)     │
                           │   ↓ uwb_task (优先级6)    │
    RPLIDAR C1 ───────────►│ UART2 (RX=17, TX=9)      │
                           │   ↓ lidar_task (优先级6)  │
@@ -31,7 +31,7 @@
                           │   ↓ ultra_task_L (优先5)  │
    A02YYUW #2 (右前) ────►│ SW UART (GPIO36)        │
                           │   ↓ ultra_task_R (优先5)  │
-   IMU ──────────────────►│ I2C0 (SDA=11, SCL=12)    │
+   IMU ──────────────────►│ I2C0 (SDA=39, SCL=38)    │
                           │   ↓ (control_task 内读取) │
                           │                          │
                           │   ┌─────── 共享快照 ──────┐│
@@ -131,7 +131,7 @@ typedef struct {
 | 属性 | 值 |
 |------|-----|
 | 型号 | BU03 / BU04（Ai-Thinker） |
-| 接口 | HW UART1（Kconfig 默认：RX=18, TX=8） |
+| 接口 | HW UART1（Kconfig 默认：RX=18, TX=37） |
 | 波特率 | 115200 |
 | 协议 | JSxxxx{"TWR":...} JSON 帧，或 "distance: X.XX" 纯距离行 |
 | 运行任务 | `uwb_task`，栈 4096，优先级 6 |
@@ -175,7 +175,7 @@ UWB 模块持续输出定位数据。`uwb_task` 逐行读取 UART，调用 `bu_u
 | 属性 | 值 |
 |------|-----|
 | 型号 | 定制 I2C 九轴 IMU |
-| 接口 | I2C0（Kconfig 默认：SDA=11, SCL=12） |
+| 接口 | I2C0（Kconfig 默认：SDA=39, SCL=38） |
 | 地址 | 0x23（7 位） |
 | 读取 | 加速度计、陀螺仪、磁力计、四元数、欧拉角 |
 
@@ -413,11 +413,11 @@ bash tests/protocol/run_tests.sh
 | 左编码器 B | GPIO 中断 | GPIO7 | 4x 正交解码 |
 | 右编码器 A | GPIO 中断 | GPIO15 | 4x 正交解码 |
 | 右编码器 B | GPIO 中断 | GPIO16 | 4x 正交解码 |
-| BU UWB | HW UART1 | RX=18, TX=8 | 115200 baud |
+| BU UWB | HW UART1 | RX=18, TX=37 | 115200 baud |
 | RPLIDAR C1 | HW UART2 | RX=17, TX=9 | 460800 baud |
 | 超声波左 | SW UART | RX=35 | 9600 baud，仅接 RX |
 | 超声波右 | SW UART | RX=36 | 9600 baud，仅接 RX |
-| IMU | I2C0 | SDA=11, SCL=12 | 地址 0x23 |
+| IMU | I2C0 | SDA=39, SCL=38 | 地址 0x23 |
 
 > 以上为 Kconfig `.default` 值。你的实际引脚以 menuconfig 中设置的为准。
 
