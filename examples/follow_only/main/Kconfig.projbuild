@@ -1,0 +1,170 @@
+menu "Follow-only suitcase (pure following, no obstacle avoidance)"
+
+comment "--- Drive motors (rear diff-drive: APO-DL ESC + RC PWM) ---"
+
+config FOLLOW_ONLY_LEFT_ESC_GPIO
+    int "Left ESC signal GPIO (RC PWM out)"
+    default 4
+    help
+        RC servo-pulse output to the rear-LEFT ESC (50 Hz, 1000-2000 us).
+
+config FOLLOW_ONLY_RIGHT_ESC_GPIO
+    int "Right ESC signal GPIO (RC PWM out)"
+    default 5
+
+config FOLLOW_ONLY_ESC_MIN_US
+    int "ESC pulse: full reverse (us)"
+    default 1000
+
+config FOLLOW_ONLY_ESC_MID_US
+    int "ESC pulse: neutral / stop (us)"
+    default 1500
+
+config FOLLOW_ONLY_ESC_MAX_US
+    int "ESC pulse: full forward (us)"
+    default 2000
+
+config FOLLOW_ONLY_ESC_ARM_MS
+    int "Hold neutral this long at boot so the ESC arms (ms)"
+    default 2000
+
+comment "--- AB encoders (closed-loop speed feedback) ---"
+
+config FOLLOW_ONLY_LEFT_ENC_A_GPIO
+    int "Left encoder A GPIO"
+    default 6
+
+config FOLLOW_ONLY_LEFT_ENC_B_GPIO
+    int "Left encoder B GPIO"
+    default 7
+
+config FOLLOW_ONLY_RIGHT_ENC_A_GPIO
+    int "Right encoder A GPIO"
+    default 15
+
+config FOLLOW_ONLY_RIGHT_ENC_B_GPIO
+    int "Right encoder B GPIO"
+    default 16
+
+config FOLLOW_ONLY_TICKS_PER_METER
+    int "Encoder ticks (4x) per metre of wheel travel - CALIBRATE"
+    default 2000
+    help
+        4x quadrature counts for one metre of forward travel. Measure: push the
+        robot exactly 1 m and read the printed tick delta.
+
+comment "--- Wheel-speed PID (us output per m/s error) ---"
+
+config FOLLOW_ONLY_SPEED_KP
+    int "Speed loop KP (us per m/s)"
+    default 200
+
+config FOLLOW_ONLY_SPEED_KI
+    int "Speed loop KI (us per m/s per s)"
+    default 300
+
+config FOLLOW_ONLY_SPEED_KD
+    int "Speed loop KD (us per m/s/s)"
+    default 5
+
+config FOLLOW_ONLY_SPEED_PID_LIMIT_US
+    int "Max PID contribution per wheel (us)"
+    default 400
+
+config FOLLOW_ONLY_TRACK_WIDTH_MM
+    int "Track width: distance between the two rear wheels (mm)"
+    default 300
+
+config FOLLOW_ONLY_MAX_WHEEL_SPEED_MMPS
+    int "Top wheel speed (mm/s): sets feed-forward gain and clamps set-points"
+    default 800
+
+comment "--- Follow behaviour ---"
+
+config FOLLOW_ONLY_FOLLOW_DISTANCE_MM
+    int "Desired standoff distance behind the user (mm)"
+    default 1000
+
+config FOLLOW_ONLY_STOP_BAND_MM
+    int "Stop band below standoff where the robot holds still (mm)"
+    default 250
+
+config FOLLOW_ONLY_MAX_LINEAR_MMPS
+    int "Max follow linear speed (mm/s)"
+    default 700
+
+config FOLLOW_ONLY_MAX_ANGULAR_MRADPS
+    int "Max yaw rate (milli-rad/s)"
+    default 1600
+
+config FOLLOW_ONLY_KP_DIST
+    int "Follow Kp: range error -> linear velocity (milli, m/s per m)"
+    default 900
+    help
+        Linear velocity = Kp_dist * (range - standoff). Higher = more aggressive
+        catching up. Milli-scale for integer menuconfig entry.
+
+config FOLLOW_ONLY_KP_BEAR
+    int "Follow Kp: bearing error -> yaw rate (milli, rad/s per rad)"
+    default 1600
+    help
+        Angular velocity = Kp_bear * bearing_to_user.
+
+config FOLLOW_ONLY_SEARCH_ANGULAR_MRADPS
+    int "Search rotation speed (milli-rad/s)"
+    default 800
+
+config FOLLOW_ONLY_SEARCH_TIMEOUT_S
+    int "Search timeout before going IDLE (seconds)"
+    default 6
+
+config FOLLOW_ONLY_TARGET_FRESH_MS
+    int "UWB data freshness threshold (ms)"
+    default 700
+    help
+        Data older than this is treated as missing, triggering SEARCH/IDLE.
+
+comment "--- IMU heading closed-loop ---"
+
+config FOLLOW_ONLY_HEADING_KP_MILLI
+    int "Heading-hold KP (milli, rad/s per rad of error)"
+    default 1500
+    help
+        The IMU heading loop trims the angular velocity command by
+        KP * (yaw_ref - yaw_measured) to suppress drift and caster scrub.
+
+config FOLLOW_ONLY_I2C_SDA_GPIO
+    int "IMU I2C SDA GPIO"
+    default 39
+
+config FOLLOW_ONLY_I2C_SCL_GPIO
+    int "IMU I2C SCL GPIO"
+    default 38
+
+config FOLLOW_ONLY_IMU_ADDR
+    hex "IMU 7-bit I2C address"
+    default 0x23
+
+comment "--- UWB sensor ---"
+
+config FOLLOW_ONLY_UWB_UART
+    int "BU UWB UART port"
+    default 1
+
+config FOLLOW_ONLY_UWB_RX_GPIO
+    int "BU UWB ESP RX GPIO"
+    default 18
+
+config FOLLOW_ONLY_UWB_TX_GPIO
+    int "BU UWB ESP TX GPIO"
+    default 37
+
+config FOLLOW_ONLY_UWB_BAUD
+    int "BU UWB baudrate"
+    default 115200
+
+config FOLLOW_ONLY_CONTROL_HZ
+    int "Control loop frequency (Hz)"
+    default 50
+
+endmenu

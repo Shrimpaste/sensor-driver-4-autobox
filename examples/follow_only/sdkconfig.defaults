@@ -1,0 +1,9 @@
+# Target
+CONFIG_IDF_TARGET="esp32s3"
+
+# A bit more headroom for the per-sensor tasks
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+
+# Floating point is used heavily in the control loop; keep newlib nano off so
+# printf("%f") works in logs.
+CONFIG_NEWLIB_NANO_FORMAT=n
