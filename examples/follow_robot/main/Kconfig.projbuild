@@ -161,7 +161,7 @@ config FOLLOW_ROBOT_UWB_RX_GPIO
     default 18
 config FOLLOW_ROBOT_UWB_TX_GPIO
     int "BU UWB ESP TX GPIO"
-    default 8
+    default 37
 config FOLLOW_ROBOT_UWB_BAUD
     int "BU UWB baudrate"
     default 115200
@@ -212,11 +212,11 @@ config FOLLOW_ROBOT_IMU_YAW_INVERT
     depends on FOLLOW_ROBOT_IMU_ENABLE
 config FOLLOW_ROBOT_I2C_SDA_GPIO
     int "IMU I2C SDA GPIO"
-    default 11
+    default 39
     depends on FOLLOW_ROBOT_IMU_ENABLE
 config FOLLOW_ROBOT_I2C_SCL_GPIO
     int "IMU I2C SCL GPIO"
-    default 12
+    default 38
     depends on FOLLOW_ROBOT_IMU_ENABLE
 config FOLLOW_ROBOT_IMU_ADDR
     hex "IMU 7-bit I2C address"
