@@ -1,0 +1,7 @@
+# Custom partition table with SPIFFS logs partition for flash logging
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# HTTP server header buffer (default 512 too small for CSV download)
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024

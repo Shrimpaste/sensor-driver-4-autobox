@@ -1,0 +1,191 @@
+menu "Remote Box (2D web control)"
+
+comment "--- WiFi AP ---"
+
+config REMOTE_BOX_AP_SSID
+    string "AP SSID"
+    default "RemoteBox"
+
+config REMOTE_BOX_AP_PASS
+    string "AP password"
+    default "12345678"
+
+config REMOTE_BOX_AP_CHANNEL
+    int "AP channel"
+    default 6
+
+comment "--- Drive motors ---"
+
+config REMOTE_BOX_LEFT_ESC_GPIO
+    int "Left ESC GPIO"
+    default 4
+
+config REMOTE_BOX_RIGHT_ESC_GPIO
+    int "Right ESC GPIO"
+    default 5
+
+config REMOTE_BOX_ESC_MIN_US
+    int "ESC min pulse (us)"
+    default 1000
+
+config REMOTE_BOX_ESC_MID_US
+    int "ESC mid pulse (us)"
+    default 1500
+
+config REMOTE_BOX_ESC_MAX_US
+    int "ESC max pulse (us)"
+    default 2000
+
+config REMOTE_BOX_ESC_ARM_MS
+    int "ESC arm hold time (ms)"
+    default 2000
+
+config REMOTE_BOX_LEFT_INVERT
+    bool "Invert left motor direction"
+    default n
+    help
+        Set to y only if the motor runs backwards when it should go forward.
+        With the standard APO-DL wiring, direction is handled by hardware.
+
+config REMOTE_BOX_RIGHT_INVERT
+    bool "Invert right motor direction"
+    default n
+    help
+        Set to y only if the motor runs backwards when it should go forward.
+        With the standard APO-DL wiring, direction is handled by hardware.
+
+comment "--- Encoders ---"
+
+config REMOTE_BOX_USE_ENCODERS
+    bool "Use encoders (closed-loop PID)"
+    default y
+    help
+        Enable AB quadrature encoders for closed-loop wheel speed PID.
+        When disabled, uses open-loop feed-forward with slew limiting.
+
+config REMOTE_BOX_LEFT_ENC_A_GPIO
+    int "Left encoder A GPIO"
+    default 6
+    depends on REMOTE_BOX_USE_ENCODERS
+
+config REMOTE_BOX_LEFT_ENC_B_GPIO
+    int "Left encoder B GPIO"
+    default 7
+    depends on REMOTE_BOX_USE_ENCODERS
+
+config REMOTE_BOX_RIGHT_ENC_A_GPIO
+    int "Right encoder A GPIO"
+    default 15
+    depends on REMOTE_BOX_USE_ENCODERS
+
+config REMOTE_BOX_RIGHT_ENC_B_GPIO
+    int "Right encoder B GPIO"
+    default 16
+    depends on REMOTE_BOX_USE_ENCODERS
+
+config REMOTE_BOX_LEFT_ENC_INVERT
+    bool "Invert left encoder direction"
+    default n
+    depends on REMOTE_BOX_USE_ENCODERS
+    help
+        Set to y if encoder counts decrease when moving forward.
+
+config REMOTE_BOX_RIGHT_ENC_INVERT
+    bool "Invert right encoder direction"
+    default n
+    depends on REMOTE_BOX_USE_ENCODERS
+    help
+        Set to y if encoder counts decrease when moving forward.
+
+config REMOTE_BOX_TICKS_PER_METER
+    int "Encoder ticks (4x) per metre - CALIBRATE"
+    default 2000
+    depends on REMOTE_BOX_USE_ENCODERS
+
+comment "--- Speed PID (closed-loop only) ---"
+
+config REMOTE_BOX_SPEED_KP
+    int "KP (us per m/s)"
+    default 200
+    depends on REMOTE_BOX_USE_ENCODERS
+
+config REMOTE_BOX_SPEED_KI
+    int "KI (us per m/s/s)"
+    default 300
+    depends on REMOTE_BOX_USE_ENCODERS
+
+config REMOTE_BOX_SPEED_KD
+    int "KD (us per m/s/s)"
+    default 5
+    depends on REMOTE_BOX_USE_ENCODERS
+
+config REMOTE_BOX_SPEED_PID_LIMIT_US
+    int "PID output limit (us)"
+    default 400
+    depends on REMOTE_BOX_USE_ENCODERS
+
+comment "--- Kinematics ---"
+
+config REMOTE_BOX_TRACK_WIDTH_MM
+    int "Track width (mm)"
+    default 300
+
+config REMOTE_BOX_MAX_WHEEL_SPEED_MMPS
+    int "Max wheel speed (mm/s)"
+    default 800
+
+comment "--- Remote control limits (conservative defaults) ---"
+
+config REMOTE_BOX_MAX_LINEAR_MMPS
+    int "Max forward speed (mm/s)"
+    default 200
+
+config REMOTE_BOX_MAX_REVERSE_MMPS
+    int "Max reverse speed (mm/s)"
+    default 120
+
+config REMOTE_BOX_MAX_ANGULAR_MRADPS
+    int "Max yaw rate (mrad/s)"
+    default 800
+
+config REMOTE_BOX_CMD_TIMEOUT_MS
+    int "Command timeout (ms)"
+    default 500
+
+config REMOTE_BOX_CONTROL_HZ
+    int "Control loop frequency (Hz)"
+    default 50
+
+comment "--- Acceleration limits ---"
+
+config REMOTE_BOX_LIN_ACCEL
+    int "Linear acceleration (mm/s^2)"
+    default 500
+
+config REMOTE_BOX_LIN_DECEL
+    int "Linear deceleration (mm/s^2)"
+    default 1200
+
+config REMOTE_BOX_ANG_ACCEL
+    int "Angular acceleration (mrad/s^2)"
+    default 2500
+
+comment "--- Safety ---"
+
+config REMOTE_BOX_HB_TIMEOUT_MS
+    int "Heartbeat timeout (ms)"
+    default 1500
+
+comment "--- Logging ---"
+
+config REMOTE_BOX_LOG_ENABLE
+    bool "Enable flash CSV logging"
+    default y
+
+config REMOTE_BOX_LOG_HZ
+    int "Log sample rate (Hz)"
+    default 10
+    range 1 50
+    depends on REMOTE_BOX_LOG_ENABLE
+
+endmenu
