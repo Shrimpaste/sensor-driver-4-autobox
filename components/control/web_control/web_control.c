@@ -97,6 +97,9 @@ static volatile bool s_clear_log_requested = false;
 
 static inline uint64_t now_us(void) { return (uint64_t)esp_timer_get_time(); }
 
+/* P0-2: Sanitize float for JSON output. */
+static float jsonf(float v) { return isfinite(v) ? v : 0.0f; }
+
 static float clampf(float x, float lo, float hi)
 {
     if (x < lo) return lo;
@@ -212,20 +215,30 @@ static bool remote_startup_ready(void)
     return r.client_connected && r.first_heartbeat_us != 0;
 }
 
+/* P1: Check-only (no side effects) — safe for /live. */
+static bool remote_motion_allowed_check(const remote_state_t *r, uint64_t t)
+{
+    if (r->estop_latched || !r->motion_armed) return false;
+    if (!r->client_connected) return false;
+    if (r->last_heartbeat_us == 0) return false;
+    if (t - r->last_heartbeat_us > s_cfg.hb_timeout_us) return false;
+    return true;
+}
+
+/* Full version with side effects — control_task only. */
 static bool remote_motion_allowed(void)
 {
     const uint64_t t = now_us();
     remote_state_t r;
     remote_get_snapshot(&r);
 
-    if (r.estop_latched || !r.motion_armed) return false;
-    if (!r.client_connected) return false;
-    if (r.last_heartbeat_us == 0) return false;
-
-    if (t - r.last_heartbeat_us > s_cfg.hb_timeout_us) {
-        remote_estop(t);
-        s_estop_pending = true;
-        ESP_LOGW(TAG, "heartbeat timeout -> E-STOP");
+    if (!remote_motion_allowed_check(&r, t)) {
+        if (r.client_connected && r.motion_armed && !r.estop_latched &&
+            r.last_heartbeat_us != 0 && (t - r.last_heartbeat_us > s_cfg.hb_timeout_us)) {
+            remote_estop(t);
+            s_estop_pending = true;
+            ESP_LOGW(TAG, "heartbeat timeout -> E-STOP");
+        }
         return false;
     }
     return true;
@@ -548,12 +561,16 @@ static esp_err_t live_handler(httpd_req_t *req)
     remote_get_snapshot(&r);
 
     uint64_t t = now_us();
+    /* P1: Use check-only — no side effects. */
+    bool mot_ok = remote_motion_allowed_check(&r, t);
+
     uint32_t hb_age_ms = 0xffffffffu;
     if (r.last_heartbeat_us != 0 && t >= r.last_heartbeat_us) {
         hb_age_ms = (uint32_t)((t - r.last_heartbeat_us) / 1000ULL);
     }
 
     char *buf = s_live_json_buf;
+    /* P0-2: All float args wrapped in jsonf(). */
     int n = snprintf(buf, 4096,
         "{"
         "\"remote\":{\"connected\":%s,\"estop\":%s,\"armed\":%s,\"ok\":%s,"
@@ -569,16 +586,16 @@ static esp_err_t live_handler(httpd_req_t *req)
         r.client_connected ? "true" : "false",
         r.estop_latched ? "true" : "false",
         r.motion_armed ? "true" : "false",
-        rec.motion_allowed ? "true" : "false",
+        mot_ok ? "true" : "false",
         (unsigned long)hb_age_ms, (unsigned long)r.heartbeat_count,
         (unsigned long)rec.cmd_session,
-        rec.cmd_x, rec.cmd_y, (unsigned long)rec.cmd_seq,
+        jsonf(rec.cmd_x), jsonf(rec.cmd_y), (unsigned long)rec.cmd_seq,
         (unsigned long)rec.cmd_age_ms, rec.cmd_deadman ? "true" : "false",
-        rec.target_v_mps, rec.target_w_rps,
-        rec.applied_v_mps, rec.applied_w_rps,
-        rec.target_left_mps, rec.target_right_mps,
-        rec.cmd_left_us, rec.cmd_right_us,
-        rec.meas_left_mps, rec.meas_right_mps,
+        jsonf(rec.target_v_mps), jsonf(rec.target_w_rps),
+        jsonf(rec.applied_v_mps), jsonf(rec.applied_w_rps),
+        jsonf(rec.target_left_mps), jsonf(rec.target_right_mps),
+        jsonf(rec.cmd_left_us), jsonf(rec.cmd_right_us),
+        jsonf(rec.meas_left_mps), jsonf(rec.meas_right_mps),
         rec.safety_reason ? rec.safety_reason : "?",
         rec.using_encoders ? "true" : "false");
 
@@ -692,19 +709,14 @@ static const char s_index_html[] =
 "window.addEventListener('blur',sendZero);"
 "window.addEventListener('beforeunload',sendZero);"
 "document.addEventListener('visibilitychange',()=>{if(document.hidden)sendZero();});"
-"async function doStop(){clearInputs();"
-"await fetch('/estop',{method:'POST'}).catch(()=>{});poll();}"
-"async function doArm(){clearInputs();"
-"try{const r=await fetch('/clear',{method:'POST'});const j=await r.json();"
-"if(j.session!==undefined)S.session=j.session;S.seq=0;"
-"}catch(_){}poll();}"
-"async function doOff(){clearInputs();"
-"await fetch('/motion_off',{method:'POST'}).catch(()=>{});poll();}"
-"function doClearLog(){fetch('/clear_log',{method:'POST'}).catch(()=>{});}"
-"let _pc=null;"
-"async function poll(){"
-"if(_pc)_pc.abort();_pc=new AbortController();"
-"try{const r=await fetch('/live',{cache:'no-store',signal:_pc.signal});"
+"var pollBusy=false,hbBusy=false;"
+"async function postCmd(p){try{let r=await fetch(p,{method:'POST',cache:'no-store'});"
+"if(!r.ok)throw new Error('HTTP '+r.status);return true;"
+"}catch(e){document.getElementById('err').textContent='FAIL: '+p;return false;}}"
+"async function heartbeat(){if(hbBusy)return;hbBusy=true;"
+"try{await fetch('/hb',{method:'POST',cache:'no-store'});}catch(e){}finally{hbBusy=false;}}"
+"async function poll(){if(pollBusy)return;pollBusy=true;"
+"try{const r=await fetch('/live',{cache:'no-store'});"
 "const j=await r.json();"
 "const rm=j.remote||{},cm=j.cmd||{},ct=j.control||{},ch=j.chassis||{};"
 "document.getElementById('err').textContent='';"
@@ -713,9 +725,16 @@ static const char s_index_html[] =
 "v='+ct.target_v.toFixed(2)+' w='+ct.target_w.toFixed(2)+'<br>'+'"
 "meas L/R='+ch.meas_left.toFixed(2)+'/'+ch.meas_right.toFixed(2)+' m/s<br>'+'"
 "safety: '+j.safety+' | encoders='+j.encoders;"
-"}catch(e){if(e.name!=='AbortError')document.getElementById('info').textContent='连接中断';}}"
-"setInterval(()=>fetch('/hb',{method:'POST'}).catch(()=>{}),500);"
-"setInterval(poll,200);poll();"
+"}catch(e){document.getElementById('info').textContent='连接中断';}"
+"finally{pollBusy=false;}}"
+"async function doEstop(){clearInputs();if(await postCmd('/estop'))await poll();}"
+"async function doArm(){clearInputs();"
+"try{const r=await fetch('/clear',{method:'POST'});const j=await r.json();"
+"if(j.session!==undefined)S.session=j.session;S.seq=0;"
+"}catch(_){}poll();}"
+"async function doMotionOff(){clearInputs();if(await postCmd('/motion_off'))await poll();}"
+"function doClearLog(){postCmd('/clear_log');}"
+"setInterval(heartbeat,700);setInterval(poll,700);heartbeat();poll();"
 "</script></body></html>";
 
 static esp_err_t index_handler(httpd_req_t *req)

@@ -94,6 +94,9 @@ static volatile bool s_clear_log_requested = false;
 
 static inline uint64_t now_us(void) { return (uint64_t)esp_timer_get_time(); }
 
+/* P0-2: Sanitize float for JSON output. Prevents nan/inf from breaking frontend. */
+static float jsonf(float v) { return isfinite(v) ? v : 0.0f; }
+
 static void remote_get_snapshot(remote_state_t *out)
 {
     portENTER_CRITICAL(&s_remote_mux);
@@ -171,24 +174,33 @@ static bool remote_startup_ready(void)
     return r.client_connected && r.first_heartbeat_us != 0;
 }
 
+/* P1: Check-only version (no side effects) — safe for /live handler. */
+static bool remote_motion_allowed_check(const remote_state_t *r, uint64_t t)
+{
+    if (r->estop_latched || !r->motion_armed) return false;
+    if (!r->client_connected) return false;
+    if (r->last_heartbeat_us == 0) return false;
+    if (t - r->last_heartbeat_us > s_cfg.hb_timeout_us) return false;
+    return true;
+}
+
+/* Full version with side effects — used by control_task only. */
 static bool remote_motion_allowed(void)
 {
     const uint64_t t = now_us();
     remote_state_t r;
     remote_get_snapshot(&r);
 
-    if (r.estop_latched || !r.motion_armed) return false;
-    if (!r.client_connected) return false;
-    if (r.last_heartbeat_us == 0) return false;
-
-    /* Heartbeat timeout: latch E-stop and trigger hard stop. */
-    if (t - r.last_heartbeat_us > s_cfg.hb_timeout_us) {
-        remote_estop(t);
-        s_estop_pending = true;
-        ESP_LOGW(TAG, "heartbeat timeout -> E-STOP latched");
+    if (!remote_motion_allowed_check(&r, t)) {
+        /* Heartbeat timeout: latch E-stop. */
+        if (r.client_connected && r.motion_armed && !r.estop_latched &&
+            r.last_heartbeat_us != 0 && (t - r.last_heartbeat_us > s_cfg.hb_timeout_us)) {
+            remote_estop(t);
+            s_estop_pending = true;
+            ESP_LOGW(TAG, "heartbeat timeout -> E-STOP latched");
+        }
         return false;
     }
-
     return true;
 }
 
@@ -420,8 +432,8 @@ static const char s_index_html[] =
 "<style>"
 "body{font-family:Arial,sans-serif;background:#101214;color:#eee;margin:18px;}"
 "button{font-size:20px;padding:14px 18px;margin:6px;border:0;border-radius:10px;}"
-"#stop{background:#d00000;color:white;width:100%;height:92px;font-size:38px;font-weight:bold;}"
-"#arm{background:#008f5a;color:white;}#off{background:#555;color:white;}#clearlog{background:#7655d9;color:white;}"
+"#btn_stop{background:#d00000;color:white;width:100%;height:92px;font-size:38px;font-weight:bold;}"
+"#btn_arm{background:#008f5a;color:white;}#btn_off{background:#555;color:white;}#btn_clearlog{background:#7655d9;color:white;}"
 "pre{white-space:pre-wrap;background:#1e2329;padding:12px;border-radius:10px;font-size:14px;}"
 "#summary{background:#18202a;border:1px solid #38506a;border-radius:10px;padding:12px;margin:12px 0;font-size:18px;line-height:1.45;}"
 "#summary b{font-size:26px;color:#8cc8ff;}"
@@ -429,16 +441,16 @@ static const char s_index_html[] =
 "</style></head><body>"
 "<h2>Follow-only UWB Debug</h2>"
 "<p class='warn'>Motion requires ARM + fresh heartbeat. STOP / disconnect / timeout latches E-stop.</p>"
-"<button id='stop' onclick='estop()'>STOP</button><br>"
-"<button id='arm' onclick='arm()'>CLEAR / ARM</button>"
-"<button id='off' onclick='motionOff()'>MOTION OFF</button>"
-"<button id='clearlog' onclick='clearLog()'>CLEAR LOG</button>"
+"<button id='btn_stop' onclick='doEstop()'>STOP</button><br>"
+"<button id='btn_arm' onclick='doArm()'>CLEAR / ARM</button>"
+"<button id='btn_off' onclick='doMotionOff()'>MOTION OFF</button>"
+"<button id='btn_clearlog' onclick='doClearLog()'>CLEAR LOG</button>"
 "<p><a href='/log' target='_blank'>Download CSV log</a></p>"
 "<div id='summary'>waiting for live data...</div>"
 "<div id='errmsg' style='color:red;font-weight:bold'></div>"
 "<pre id='live'>loading...</pre>"
 "<script>"
-"function f(x,d){return (x===undefined||x===null||!isFinite(Number(x)))?'--':Number(x).toFixed(d);}"
+"function f(x,d){return(x===undefined||x===null||!isFinite(Number(x)))?'--':Number(x).toFixed(d);}"
 "function render(j){let r=j.remote||{},t=j.target||{},u=j.uwb||{},c=j.control||{};"
 "document.getElementById('errmsg').textContent='';"
 "document.getElementById('summary').innerHTML="
@@ -448,19 +460,26 @@ static const char s_index_html[] =
 "'applied v='+f(c.applied_v_mps,2)+' m/s, w='+f(c.applied_w_rps,2)+' rad/s, armed='+r.motion_armed+', motion_allowed='+r.motion_allowed+'<br>' +"
 "'chassis: tgt L/R='+f(c.target_left_mps,2)+'/'+f(c.target_right_mps,2)+' m/s, cmd L/R='+f(c.cmd_left_us,1)+'/'+f(c.cmd_right_us,1)+' us, meas L/R='+f(c.meas_left_mps,2)+'/'+f(c.meas_right_mps,2)+' m/s';"
 "}"
-"async function post(p){try{let r=await fetch(p,{method:'POST',cache:'no-store'});if(!r.ok)throw new Error(r.status);return true;}catch(e){document.getElementById('errmsg').textContent='CMD FAIL: '+p+' ('+e+')';return false;}}"
-"async function estop(){if(await post('/estop'))await poll();}"
-"async function arm(){if(await post('/clear'))await poll();}"
-"async function motionOff(){if(await post('/motion_off'))await poll();}"
-"async function clearLog(){if(await post('/clear_log'))await poll();}"
-"async function hb(){await post('/hb');}"
-"var _pollCtrl=null;"
-"async function poll(){"
-"if(_pollCtrl)_pollCtrl.abort();_pollCtrl=new AbortController();"
-"try{let r=await fetch('/live',{cache:'no-store',signal:_pollCtrl.signal});if(!r.ok)throw new Error('HTTP '+r.status);"
-"let txt=await r.text();let j=JSON.parse(txt);render(j);document.getElementById('live').textContent=JSON.stringify(j,null,2);"
-"}catch(e){if(e.name!=='AbortError'){document.getElementById('summary').textContent='Live connection problem';document.getElementById('live').textContent='connection lost: '+e;}}}"
-"setInterval(hb,300);setInterval(poll,300);hb();poll();"
+"var pollBusy=false,hbBusy=false;"
+"async function postCmd(p){try{let r=await fetch(p,{method:'POST',cache:'no-store'});"
+"if(!r.ok)throw new Error('HTTP '+r.status);return true;"
+"}catch(e){document.getElementById('errmsg').textContent='CMD FAIL: '+p+' ('+e+')';return false;}}"
+"async function heartbeat(){if(hbBusy)return;hbBusy=true;"
+"try{await fetch('/hb',{method:'POST',cache:'no-store'});}catch(e){}finally{hbBusy=false;}}"
+"async function poll(){if(pollBusy)return;pollBusy=true;"
+"try{let r=await fetch('/live',{cache:'no-store'});"
+"if(!r.ok)throw new Error('HTTP '+r.status);"
+"let txt=await r.text();let j=JSON.parse(txt);"
+"render(j);document.getElementById('live').textContent=JSON.stringify(j,null,2);"
+"document.getElementById('errmsg').textContent='';"
+"}catch(e){document.getElementById('summary').textContent='Live connection problem';"
+"document.getElementById('live').textContent='connection lost: '+e;}"
+"finally{pollBusy=false;}}"
+"async function doEstop(){if(await postCmd('/estop'))await poll();}"
+"async function doArm(){if(await postCmd('/clear'))await poll();}"
+"async function doMotionOff(){if(await postCmd('/motion_off'))await poll();}"
+"async function doClearLog(){await postCmd('/clear_log');}"
+"setInterval(heartbeat,700);setInterval(poll,700);heartbeat();poll();"
 "</script></body></html>";
 
 static esp_err_t index_handler(httpd_req_t *req)
@@ -486,7 +505,15 @@ static esp_err_t clear_handler(httpd_req_t *req)
 {
     remote_clear_and_arm(now_us());
     ESP_LOGW(TAG, "REMOTE E-STOP cleared; motion armed by page");
-    return http_send_text(req, "ARMED\n", "text/plain");
+    remote_state_t r;
+    remote_get_snapshot(&r);
+    char resp[256];
+    snprintf(resp, sizeof(resp),
+             "{\"ok\":true,\"armed\":true,"
+             "\"estop_latched\":%s,\"motion_armed\":%s}",
+             r.estop_latched ? "true" : "false",
+             r.motion_armed ? "true" : "false");
+    return http_send_text(req, resp, "application/json");
 }
 
 static esp_err_t motion_off_handler(httpd_req_t *req)
@@ -507,12 +534,14 @@ static char s_live_json_buf[8192];
 static esp_err_t live_handler(httpd_req_t *req)
 {
     const uint64_t t = now_us();
-    const bool mot_ok = remote_motion_allowed();
 
     wdbg_record_t rec;
     remote_state_t r;
     live_get(&rec);
     remote_get_snapshot(&r);
+
+    /* P1: Use check-only version — no side effects in /live. */
+    const bool mot_ok = remote_motion_allowed_check(&r, t);
 
     uint32_t hb_age_ms = 0xffffffffu;
     if (r.last_heartbeat_us != 0 && t >= r.last_heartbeat_us) {
@@ -520,6 +549,7 @@ static esp_err_t live_handler(httpd_req_t *req)
     }
 
     char *buf = s_live_json_buf;
+    /* P0-2: All float args wrapped in jsonf() to prevent nan/inf. */
     int n = snprintf(buf, 8192,
              "{"
              "\"remote\":{"
@@ -560,50 +590,50 @@ static esp_err_t live_handler(httpd_req_t *req)
              (unsigned long)r.disconnect_count,
              rec.target_valid ? "true" : "false",
              (unsigned long)rec.target_age_ms,
-             rec.target_distance_m,
-             rec.target_bearing_rad,
-             RAD2DEG(rec.target_bearing_rad),
+             jsonf(rec.target_distance_m),
+             jsonf(rec.target_bearing_rad),
+             jsonf(RAD2DEG(rec.target_bearing_rad)),
              uwb_frame_type_name(rec.uwb.frame_type),
              rec.uwb.valid ? "true" : "false",
              rec.uwb.last_frame_accepted ? "true" : "false",
              rec.uwb.bearing_stale ? "true" : "false",
-             rec.uwb.filt_range_m,
-             RAD2DEG(rec.uwb.filt_bearing_rad),
-             rec.uwb.raw_range_m,
-             rec.uwb.filt_range_m,
+             jsonf(rec.uwb.filt_range_m),
+             jsonf(RAD2DEG(rec.uwb.filt_bearing_rad)),
+             jsonf(rec.uwb.raw_range_m),
+             jsonf(rec.uwb.filt_range_m),
              rec.uwb.raw_x_cm,
              rec.uwb.raw_y_cm,
              rec.uwb.raw_distance_cm,
-             rec.uwb.raw_fwd_m,
-             rec.uwb.raw_left_m,
-             rec.uwb.raw_range_m,
-             rec.uwb.raw_bearing_rad,
-             RAD2DEG(rec.uwb.raw_bearing_rad),
-             rec.uwb.filt_fwd_m,
-             rec.uwb.filt_left_m,
-             rec.uwb.filt_range_m,
-             rec.uwb.filt_bearing_rad,
-             RAD2DEG(rec.uwb.filt_bearing_rad),
-             rec.uwb.speed_mps,
-             rec.uwb.bearing_rate_rps,
+             jsonf(rec.uwb.raw_fwd_m),
+             jsonf(rec.uwb.raw_left_m),
+             jsonf(rec.uwb.raw_range_m),
+             jsonf(rec.uwb.raw_bearing_rad),
+             jsonf(RAD2DEG(rec.uwb.raw_bearing_rad)),
+             jsonf(rec.uwb.filt_fwd_m),
+             jsonf(rec.uwb.filt_left_m),
+             jsonf(rec.uwb.filt_range_m),
+             jsonf(rec.uwb.filt_bearing_rad),
+             jsonf(RAD2DEG(rec.uwb.filt_bearing_rad)),
+             jsonf(rec.uwb.speed_mps),
+             jsonf(rec.uwb.bearing_rate_rps),
              (unsigned long)rec.uwb.frame_count,
              (unsigned long)rec.uwb.twr_count,
              (unsigned long)rec.uwb.range_only_count,
              (unsigned long)rec.uwb.parse_error_count,
              (unsigned long)rec.uwb.outlier_count,
              state_name(rec.state),
-             rec.algo_v_mps,
-             rec.algo_w_rps,
-             rec.ramp_v_mps,
-             rec.ramp_w_rps,
-             rec.applied_v_mps,
-             rec.applied_w_rps,
-             rec.target_left_mps,
-             rec.target_right_mps,
-             rec.cmd_left_us,
-             rec.cmd_right_us,
-             rec.meas_left_mps,
-             rec.meas_right_mps,
+             jsonf(rec.algo_v_mps),
+             jsonf(rec.algo_w_rps),
+             jsonf(rec.ramp_v_mps),
+             jsonf(rec.ramp_w_rps),
+             jsonf(rec.applied_v_mps),
+             jsonf(rec.applied_w_rps),
+             jsonf(rec.target_left_mps),
+             jsonf(rec.target_right_mps),
+             jsonf(rec.cmd_left_us),
+             jsonf(rec.cmd_right_us),
+             jsonf(rec.meas_left_mps),
+             jsonf(rec.meas_right_mps),
              rec.chassis_update_ret,
              rec.chassis_pulse_ret,
              (unsigned long)s_log_dropped,
@@ -667,13 +697,28 @@ static void wifi_event_handler(void *arg,
     }
 }
 
+/* Captive portal: Android/iOS/Windows connectivity checks. */
+static esp_err_t captive_portal_handler(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "204 No Content");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+/* 404 handler: show root page for unknown URIs (solves captive portal). */
+static esp_err_t notfound_handler(httpd_req_t *req, httpd_err_code_t err)
+{
+    (void)err;
+    return http_send_text(req, s_index_html, "text/html");
+}
+
 static esp_err_t http_start(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.lru_purge_enable = true;
     config.stack_size = 12288;
-    config.max_uri_handlers = 12;
+    config.max_uri_handlers = 16;
     config.recv_wait_timeout = 10;
     config.send_wait_timeout = 10;
 
@@ -683,25 +728,51 @@ static esp_err_t http_start(void)
         return ret;
     }
 
-    httpd_uri_t uri_index      = {.uri = "/",           .method = HTTP_GET,  .handler = index_handler};
-    httpd_uri_t uri_hb         = {.uri = "/hb",         .method = HTTP_POST, .handler = heartbeat_handler};
-    httpd_uri_t uri_estop      = {.uri = "/estop",      .method = HTTP_POST, .handler = estop_handler};
-    httpd_uri_t uri_clear      = {.uri = "/clear",      .method = HTTP_POST, .handler = clear_handler};
-    httpd_uri_t uri_motion_off = {.uri = "/motion_off", .method = HTTP_POST, .handler = motion_off_handler};
-    httpd_uri_t uri_live       = {.uri = "/live",       .method = HTTP_GET,  .handler = live_handler};
-    httpd_uri_t uri_status     = {.uri = "/status",     .method = HTTP_GET,  .handler = live_handler};
-    httpd_uri_t uri_log        = {.uri = "/log",        .method = HTTP_GET,  .handler = log_download_handler};
-    httpd_uri_t uri_clear_log  = {.uri = "/clear_log",  .method = HTTP_POST, .handler = clear_log_handler};
+    /* Register 404 error handler. */
+    httpd_register_err_handler(s_httpd, HTTPD_404_NOT_FOUND, notfound_handler);
 
-    httpd_register_uri_handler(s_httpd, &uri_index);
-    httpd_register_uri_handler(s_httpd, &uri_hb);
-    httpd_register_uri_handler(s_httpd, &uri_estop);
-    httpd_register_uri_handler(s_httpd, &uri_clear);
-    httpd_register_uri_handler(s_httpd, &uri_motion_off);
-    httpd_register_uri_handler(s_httpd, &uri_live);
-    httpd_register_uri_handler(s_httpd, &uri_status);
-    httpd_register_uri_handler(s_httpd, &uri_log);
-    httpd_register_uri_handler(s_httpd, &uri_clear_log);
+    /* P1: URI registration with return value checks. */
+    #define REG_URI(uri_obj) do { \
+        esp_err_t _r = httpd_register_uri_handler(s_httpd, &(uri_obj)); \
+        if (_r != ESP_OK) { \
+            ESP_LOGE(TAG, "register %s failed: %s", (uri_obj).uri, esp_err_to_name(_r)); \
+            return _r; \
+        } \
+    } while(0)
+
+    httpd_uri_t u;
+    memset(&u, 0, sizeof(u));
+
+    /* Captive portal endpoints. */
+    u.uri = "/generate_204"; u.method = HTTP_GET; u.handler = captive_portal_handler;
+    REG_URI(u);
+    u.uri = "/gen_204"; u.method = HTTP_GET; u.handler = captive_portal_handler;
+    REG_URI(u);
+    u.uri = "/ncsi.txt"; u.method = HTTP_GET; u.handler = captive_portal_handler;
+    REG_URI(u);
+    u.uri = "/hotspot-detect.html"; u.method = HTTP_GET; u.handler = captive_portal_handler;
+    REG_URI(u);
+
+    u.uri = "/"; u.method = HTTP_GET; u.handler = index_handler;
+    REG_URI(u);
+    u.uri = "/hb"; u.method = HTTP_POST; u.handler = heartbeat_handler;
+    REG_URI(u);
+    u.uri = "/estop"; u.method = HTTP_POST; u.handler = estop_handler;
+    REG_URI(u);
+    u.uri = "/clear"; u.method = HTTP_POST; u.handler = clear_handler;
+    REG_URI(u);
+    u.uri = "/motion_off"; u.method = HTTP_POST; u.handler = motion_off_handler;
+    REG_URI(u);
+    u.uri = "/live"; u.method = HTTP_GET; u.handler = live_handler;
+    REG_URI(u);
+    u.uri = "/status"; u.method = HTTP_GET; u.handler = live_handler;
+    REG_URI(u);
+    u.uri = "/log"; u.method = HTTP_GET; u.handler = log_download_handler;
+    REG_URI(u);
+    u.uri = "/clear_log"; u.method = HTTP_POST; u.handler = clear_log_handler;
+    REG_URI(u);
+
+    #undef REG_URI
 
     ESP_LOGI(TAG, "HTTP ready: http://192.168.4.1");
     return ESP_OK;
