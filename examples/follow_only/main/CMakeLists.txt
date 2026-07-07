@@ -5,6 +5,7 @@ idf_component_register(
         bu_uwb
         imu_i2c
         chassis
+        web_debug
         esp_driver_i2c
         esp_timer
         esp_driver_ledc
