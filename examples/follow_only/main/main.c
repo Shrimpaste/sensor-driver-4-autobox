@@ -49,7 +49,7 @@ static const char *TAG = "follow_only_dbg";
 
 #define FR_USE_DIRECT_PULSE_CONTROL      0
 
-#define FR_LEFT_INVERT true
+#define FR_LEFT_INVERT false
 #define FR_RIGHT_INVERT true
 #define FR_LEFT_ENC_INVERT true
 #define FR_RIGHT_ENC_INVERT true
