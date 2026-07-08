@@ -3,9 +3,18 @@
   "clangd.arguments": [
     "--background-index",
     "--query-driver=**",
-    "--compile-commands-dir=d:\\ESP32_S3\\DIAN_TEST\\dian_git\\build"
+    "--compile-commands-dir=/home/sp/auto-box/dian_git/build"
   ],
   "idf.flashType": "UART",
   "idf.portWin": "COM35",
-  "idf.currentSetup": "D:/Espressif/frameworks/esp-idf-v5.4/"
+  "idf.port": "/dev/ttyACM0",
+  "idf.currentSetup": "/home/sp/esp/esp-idf",
+  "idf.py": "/home/sp/esp/esp-idf/tools/idf.py",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "idf.customExtraVars": {
+    "OPENOCD_USB_ADAPTER_LOCATION": "1-1",
+    "IDF_TARGET": "esp32s3"
+  }
 }

@@ -47,16 +47,11 @@ Test binaries compile to `work/test-build/`.
 - **components/control/** — Motion control:
   - `chassis/` — Closed-loop differential drive: RC PWM ESC output + AB quadrature encoder PID + feed-forward
   - `follow_avoid/` — Follow + VFH obstacle avoidance algorithm
-  - `web_control/` — WiFi SoftAP + HTTP 2D remote control component (for remote_box)
-
-- **components/debug/** — Debug/telemetry:
-  - `web_debug/` — WiFi SoftAP + HTTP debug dashboard (for follow_only)
 
 ### Main Examples
 
-- **examples/follow_only/** — Pure following (UWB + IMU + chassis + web_debug). 3-state machine: IDLE/SEARCH/FOLLOW.
-- **examples/remote_box/** — 2D web-controlled chassis (chassis + web_control, no UWB/IMU).
-- **examples/follow_robot/** — Full version with lidar, ultrasonics, and VFH avoidance.
+- **examples/follow_only/** — Pure following (UWB + IMU + chassis only, no obstacle avoidance). 3-state machine: IDLE/SEARCH/FOLLOW. This is the primary reference for the follow algorithm.
+- **examples/follow_robot/** — Full version with lidar, ultrasonics, and VFH avoidance. 5-state machine adds AVOID/ESTOP states.
 
 ### Concurrency Model
 
